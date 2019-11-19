@@ -8,6 +8,43 @@ from numpy.linalg import norm as norm
 from scipy.optimize import brentq
 
 
+def multiply_gessian(f_holder, x0, v, eps=np.float64(1e-10)):
+    grad = f_holder.grad
+    return (grad(x0 + eps * v) - grad(x0)) / eps
+
+
+def conjugate_gradient(f_holder, x0, v, eps=np.float64(1e-8)):
+    not_oracle_operations = 0
+    size = len(x0)
+    multiply = lambda x, v: f_holder.gessian_at_point(x, v)
+
+    r = v - multiply(x0, x0)
+    d = np.zeros_like(r)
+    x = np.copy(x0)
+    t = 1
+    stop_condition = (norm(v) * eps) ** 2
+    multiply = lambda x, v: f_holder.gessian_at_point(x, v)
+
+    not_oracle_operations += size
+
+    while True:
+        norm_r = norm(r) ** 2
+        if norm_r <= stop_condition:
+            break
+
+        d = r - d * norm_r / t
+        t = norm_r
+        y = multiply(x0, d)
+        a = t / d.dot(y)
+        x += a * d
+        r -= a * y
+
+        not_oracle_operations += size * 9
+
+    f_holder.operations += not_oracle_operations
+    return x
+
+
 def ternary_search_full(func, left, right, eps=np.float64(1e-7), fleft=None, fright=None):
     if right - left < eps:
         return (left + right) / 2, 0, 0
@@ -193,17 +230,20 @@ def gradient_descent(f_holder, x, search_type, epsilon=np.float64(1e-6), stop_cr
 EPS = np.float64(1e-6)
 
 
-def newton(f_holder, x, iterations=100000, stop_criterion=np.float64(1e-6)):
+def newton(f_holder, x, iterations=10000, stop_criterion=np.float64(1e-6), eps=None):
     f, grad, gessian = f_holder.f, f_holder.grad, f_holder.gessian
     size = len(x)
-    E_eps = EPS * np.eye(size)
     start_time = time.time()
     oracles, times, xs, operations = [0], [0], [np.copy(x)], [0]
 
     ngrad_x0 = norm(grad(x))
     for i in range(iterations):
-        # print(f(x))
-        x -= sla.cho_solve(sla.cho_factor(gessian(x) + E_eps), grad(x)).reshape(size)
+        grad_x = grad(x)
+        if eps is not None:
+            x -= conjugate_gradient(f_holder, x, grad_x, eps=eps(norm(grad(x))))
+        else:
+            E_eps = EPS * np.eye(size)
+            x -= sla.cho_solve(sla.cho_factor(gessian(x) + E_eps), grad(x)).reshape(size)
 
         f_holder.operations += x.shape[0] ** 2
         current_time = time.time()

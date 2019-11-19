@@ -42,6 +42,11 @@ class ResultData:
         self.working_time = working_time
         self.float_operations = float_operations
 
+class CGPolicies(Enum):
+    CONST = 0,
+    SQRT_GRAD_NORM = 1,
+    GRAD_NORM = 2
+
 
 def parse_sysargs(sys_args):  # string
     args = sys_args.split(' ')
@@ -76,6 +81,15 @@ def parse_sysargs(sys_args):  # string
                     val_by_arg['distribution'] = Distribution.UNIFORM
                 else:
                     val_by_arg['distribution'] = Distribution.GAUSSIAN
+            elif arg_name == '--cg-tolerance-policy':
+                policies = {
+                    'const': CGPolicies.CONST,
+                    'sqrtGradNorm': CGPolicies.SQRT_GRAD_NORM,
+                    'gradNorm': CGPolicies.GRAD_NORM
+                }
+                val_by_arg['policy'] = policies[val]
+            elif arg_name == '--cg-tolerance-eta':
+                val_by_arg['eta'] = np.float64(val)
 
     return val_by_arg
 
@@ -161,6 +175,16 @@ def gen_initial_point(distribution, dimension):
         return np.random.normal(0, 10 ** 0.5, dimension)
 
 
+def get_eps_lambda(policy, eta):
+    lambdas = {
+        CGPolicies.CONST: lambda _: eta,
+        CGPolicies.GRAD_NORM: lambda x: x * eta,
+        CGPolicies.SQRT_GRAD_NORM: lambda x: x ** 0.5 * eta
+    }
+
+    return lambdas[policy]
+
+
 def main(draw=False):
     result_data = ResultData()
     val_by_arg = parse_sysargs(' '.join(sys.argv[1:]))
@@ -179,7 +203,13 @@ def main(draw=False):
         point, statistics = gradient_descent(f_holder, initial_point, search_type=val_by_arg['line_search'],
                                              stop_criterion=val_by_arg['eps'])
     else:
-        point, statistics = newton(f_holder, initial_point / 100, stop_criterion=val_by_arg['eps'])
+        if 'policy' in val_by_arg and 'eta' in val_by_arg:
+            policy = val_by_arg['policy']
+            eta = val_by_arg['eta']
+            point, statistics = newton(f_holder, initial_point / 100,
+                                       stop_criterion=val_by_arg['eps'], eps=get_eps_lambda(policy, eta))
+        else:
+            point, statistics = newton(f_holder, initial_point / 100, stop_criterion=val_by_arg['eps'])
 
     result_data.working_time = (time.time() - start_time)
     result_data.optimal_point = point

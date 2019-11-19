@@ -3,6 +3,7 @@ from math import e
 import numpy as np
 import numpy.linalg as la
 from scipy.special import expit
+from scipy.sparse import diags
 
 eps = np.float64(0.0001)
 
@@ -91,7 +92,6 @@ class FunctionHolder():
         self.y = y
         self.operations = self.N * self.dim
         self.XTy = np.dot(X.T, y)
-        self.xxT = np.array([np.dot(x.reshape(self.dim, 1), x.reshape(1, self.dim)) for x in X])
 
     def f(self, w):
         self.calls += 1
@@ -105,9 +105,18 @@ class FunctionHolder():
 
     def gessian(self, w):
         self.calls += 1
-        Xw = np.dot(self.X, w)
-        coefs = expit(Xw) / (1 + e ** Xw)
+        Xw = expit(np.dot(self.X, w))
+        coefs = Xw * (1 - Xw) / self.N
 
         self.operations += self.N ** 2 * self.dim
 
-        return sum([self.xxT[i] * coefs[i] for i in range(self.N)]) / self.N
+        return self.X.T.dot(diags(coefs).dot(self.X))
+
+    def gessian_at_point(self, w, v):
+        self.calls += 1
+        Xw = expit(np.dot(self.X, w))
+        coefs = Xw * (1 - Xw) / self.N
+
+        self.operations += self.N * self.dim
+
+        return self.X.T.dot(diags(coefs).dot(self.X.dot(v)))
